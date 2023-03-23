@@ -1,0 +1,279 @@
+\documentclass{article}
+\usepackage{graphicx} % Required for inserting images
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{array}
+
+\title{iLQR of wheeled robot}
+\author{Jamie Wong}
+\date{March 2023}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+iLQR(iterative linear quadratic regulator) is a extended form of LQR for nonlinear dynamic model. In this report, the kinematic model of wheeled robot will be introduced, and the iLQR algorithm will be explained.
+
+\section{LQR}
+\subsection{Problem description}
+LQR assumes the model is locally linear and time-varied, and we represent it in a matrix form as:
+\[
+f(x_t,u_t)=F_t\begin{bmatrix} x_t\\u_t \end{bmatrix} + f_t
+\]
+
+We also define a time-varied cost function to find the optimal trajectory that obeys the model. Mathematically, our objective is:
+\begin{equation}
+    \min_{u_1,...,u_T}\sum_{t=1}^T{c(x_t,u_t)} \qquad \text{s.t.} x_t = f(x_{t-1},u_{t-1}) \label{optimal-control}
+\end{equation}
+
+Therefore, if the system dynamics f (model) and the cost function c is known, we can plan our optimal controls (actions) using a trajectory optimization method.
+\[
+\tau = \{x_1,u_1,x_2,u_2,...,x_T,u_T\}
+\]
+% \begin{figure}
+%     \centering
+%     \includegraphics{pics/1280X1280.png}
+%     \caption{Caption}
+%     \label{fig:my_label}
+% \end{figure}
+
+LQR takes quadratic form cost and first order state-feedback regulator:
+\begin{gather}
+    c(x_t,u_t)=\begin{bmatrix}
+        x_t\\u_t
+    \end{bmatrix}^T C_t \begin{bmatrix}
+        x_t\\u_t
+    \end{bmatrix}
+    + \begin{bmatrix}
+        x_t\\u_t
+    \end{bmatrix}^T c_t\\
+    u_t = K_t x_{t-1} + k_t
+\end{gather}
+
+\subsection{Backward recursion}
+Backward recursion means solving the problem in backward sequence, which is the typical procedure of dynamic programming. In this section, first, solution of a single time stamp is described, second, the reason why dynamic programming approach is suitable for this problem will be shown.\\
+Cost weight matrix $C_t$ in \eqref{optimal-control} could be transformed to blocked form:
+\begin{gather}
+C_t = \begin{bmatrix}
+    C_{x_t, x_t}, C_{x_t, u_t}\\
+    C_{u_t, x_t}, C_{u_t, u_t}
+\end{bmatrix} \in \mathbb{R}^{N_x + N_u \times N_x + N_u} \\
+c_t = \begin{bmatrix}
+    c_{x_t}\\
+    c_{u_t}
+\end{bmatrix} \in \mathbb{R}^{N_x \times N_u}\\
+c(x, u) = \frac{1}{2}[x^TC_{x, x}x + x^TC_{x, u}u + u^TC_{u, x}x + u^TC_{u, u}u] + x^Tc_x + u^Tc_u
+\end{gather}
+Since $x_T$ is fixed, $\min_{u_{T - 1}}{c_(x_{T - 1}, u_{T - 1})}$ is an individual optimization problem. So $u_{T - 1}$ could be solved:
+\begin{gather}
+    \min_{u_{T - 1}}Q(x_{T - 1}, u_{T - 1}) \xrightarrow{} u_{T - 1} = K_{T - 1}x_{T - 1} + k_{T - 1} \label{qvalue-least-square-problem}\\
+    \nabla_{u_{T - 1}}Q = x^TC_{x, u} + u^TC_{u, u} + c_u = 0\\
+    u=-C_{u, u}^-1(C_{u, x}x + c_u)
+\end{gather}
+According to the form of regulator $x_t = K_t x_{t-1} + k_t$, coeffitiants are derived:
+\begin{equation}
+    K = -C_{u, u}^{-1}C_{u, x} ,\quad k = -C_{u, u}^{-1}c_u \label{qvalue-least-square}
+\end{equation}
+At present, optimal policy of last step is solved. The rest will be solved with dynamic programming approach.
+
+\subsubsection{Dynamic Programming approach in Reinforcement Learning}
+When a MDP(Markov Decision Process) is fully known, which means the dynamics is modeled and the states are fully measured, it can be solved with dynamic programming. There are two main properties of Reinforcement Learning solving approach, one is backup depth, the other is backup width. When backup depth is high, history of experiment is recorded and used in Monte-Carlo way. When backup width is high, each backup can be reused to reduce repetitive searching. Dynamic programming is a low depth and high width approach.\\
+Dynamic programming algorithm:\\
+
+If we konw the solution to subproblems $v_*(s')$, Then solution $v_*(s')$ can be found by one-step lookahead:
+\begin{equation}
+    v_*(s') = \underbrace{\max_{a \in \mathcal{A}} \mathcal{R}_x^a}_{\text{maximize reward}} + \underbrace{\gamma \sum\limits_{s' \in \mathcal{S}} \mathcal{P}_{ss'}^a v_*(s')}_{\text{accumulated value}} \label{value-dp}
+\end{equation}
+Another explicit form of solution is represented by Q-value, which is another term to represent value at state $s$ when action $a$ is taken:
+\begin{equation}
+    Q(s, a) = \mathcal{R}_x^a + \gamma \sum\limits_{s' \in \mathcal{S}} \mathcal{P}_{ss'}^a v_*(s') \label{q_value-dp}
+\end{equation}
+The solution can be found by maximize $Q(s, a)$ w.r.t $a$:
+\begin{equation}
+    Q_*(s, a) = \max_{a \in \mathcal{A}}{(\mathcal{R}_x^a + \gamma \sum\limits_{s' \in \mathcal{S}}\mathcal{P}_{ss'}^a v_*(s'))} \label{q_value-dp}
+\end{equation}
+In dynamic programming, $v_*(s')$ is in dependent of a, therefore it is eqivalent to \eqref{value-dp}.
+
+\subsubsection{Value function of LQR}
+When $u$ is figured out, the value function is:
+\begin{align}
+V(x) &= \begin{bmatrix}
+        x\\u
+    \end{bmatrix}^T C \begin{bmatrix}
+        x\\u
+    \end{bmatrix}
+    + \begin{bmatrix}
+        x\\u
+    \end{bmatrix}^T c\\
+    &=\text{const} + \frac{1}{2}[x^TC_{x, x}x + 2x^TC_{x, u}(Kx + k) + (Kx+k)^TC_{u, u}(Kx+k)] + x^Tc_x + c_u^T(Kx + k)\\
+    &=\text{const} + \frac{1}{2}x^T\underbrace{(C_{x, x} + 2C_{x, u}K + KC_{u, u}K)}_{V}x+x^T\underbrace{(c_x + C_{x, u}k + K^TC_u + K^TC_{u, u}k)}_{v} \label{value-function-coeff}
+\end{align}
+
+In \eqref{q_value-dp}, $\mathcal{P}_{ss'}$ corresponds to the system dynamics:
+\begin{equation}
+    x_T = F_{T - 1}\begin{bmatrix}
+        x_{T - 1}\\u_{T - 1}
+    \end{bmatrix} + f_{T - 1} \label{system-dynamics-f}
+\end{equation}
+Then
+\begin{equation}
+    V(x_T) = \text{const} + \frac{1}{2}\begin{bmatrix}
+        x_{T - 1}\\u_{T - 1}
+    \end{bmatrix} F_{T - 1}^TV_TF_{T - 1}\begin{bmatrix}
+        x_{T - 1}\\u_{T - 1}
+    \end{bmatrix} + \begin{bmatrix}
+        x_{T - 1}\\u_{T - 1}
+    \end{bmatrix}^T (F_{T - 1}^TV_Tf_{T - 1} + F_{T - 1}^Tv_T)
+\end{equation}
+
+Q-value function $Q(x_{T - 1}, u_{T - 1})$ is adding $V_T$ to reward value $c_(x, u)$:
+\begin{align}
+    Q(x_{T - 1}, u_{T - 1}) &= \text{const} + \frac{1}{2}\begin{bmatrix}
+        x_{T - 1}\\u_{T - 1}
+    \end{bmatrix}^T C_{T - 1} \begin{bmatrix}
+        x_{T - 1}\\u_{T - 1}
+    \end{bmatrix} + \begin{bmatrix}
+        x_{T - 1}\\u_{T - 1}
+    \end{bmatrix}^T c_{T - 1} + V_T\\
+    &=\text{const} + \frac{1}{2}\begin{bmatrix}
+        x_{T - 1}\\u_{T - 1}
+    \end{bmatrix}^T \underbrace{(C_{T - 1} + F_{T - 1}^T V_T F_{T - 1})}_{Q_{T - 1}} \begin{bmatrix}
+        x_{T - 1}\\u_{T - 1}
+    \end{bmatrix} + \begin{bmatrix}
+        x_{T - 1}\\u_{T - 1}
+    \end{bmatrix}^T \underbrace{(c_{T - 1} + F_{T - 1}^T V_T f_{T - 1} + F_{T - 1}^T v_T)}_{q_{T - 1}} \label{back-propagate}
+\end{align}
+
+In summary, the Q-value function is represented as:
+\begin{equation}
+    Q(x, u) = \begin{bmatrix}
+        x\\u
+    \end{bmatrix}^T Q  \begin{bmatrix}
+        x\\u
+    \end{bmatrix} +  \begin{bmatrix}
+        x\\u
+    \end{bmatrix}^T q
+\end{equation}
+
+\subsection{Forward recursion}
+By solving \eqref{qvalue-least-square} and back propagate according to \eqref{value-function-coeff} \eqref{system-dynamics-f} \eqref{back-propagate}, $[u_{T - 1}, ..., u_1]$ is calculated. Then states are to be updated for next round of problem solving. The system dynamics for forward recursion is:
+\begin{align}
+    x_{t + 1} &= F_t\begin{bmatrix}
+        x_t\\u_t
+    \end{bmatrix} + f_t\\
+    &= Ax_t + Bu_t\\
+    &= [A+BK_t ]x_t^T + Bk_t
+\end{align}
+\subsection{LQR algorithm}
+Backward recursion:\\
+{\setlength{\indent}
+for t = T to 1:
+\begin{align*}
+    & Q_t = C_t + F_t^T V_{t + 1} F_t\\
+    & q_t = c_t + F_t^TV_{t + 1}f_t + F_t^Tv_{t + 1}\\
+    & Q(x_t, u_t) = \text{const} + \frac{1}{2}\begin{bmatrix}
+        x_t\\u_t
+    \end{bmatrix}^T Q_t \begin{bmatrix}
+        x_t\\u_t
+    \end{bmatrix} + \begin{bmatrix}
+        x_t\\u_t
+    \end{bmatrix}^T q_t\\
+    & u_t = \arg\min_{U_t}{Q(x_t, u_t)} = K_tx_t + k_t\\
+    & K_t = -Q_{u_t, u_t}^{-1}Q_{u_t, x_t}\\
+    & k_t = -Q_{u_t, u_t}^{-1}q_{u_t}\\
+    & V_t = C_{x_t, x_t} + 2C_{x_t, u_t}K_t + K_tC_{u_t, u_t}K_t\\
+    & v_t = c_{x_t} + C_{x_t, u_t}k + K_t^TC_{u_t} + K_t^TC_{u_t, u_t}k_t\\
+    & V(x_t) = \text{const} + \frac{1}{2}x_t^TV_tx_t + x_t^Tv_t
+\end{align*}
+}
+Forward recursion:\\
+{\setlength{\indent}{}
+for t = 1 to T:
+\begin{align*}
+    & u_k = K_tx_t+k_t\\
+    & x_{t + 1} = F_t\begin{bmatrix}
+        x_t\\u_t
+    \end{bmatrix} + f_t
+\end{align*}
+}
+
+\section{iLQR}
+For nonlinear model, instead of least-square optimization problem \eqref{qvalue-least-square-problem}, Newton-Method is a feasible tool.
+\subsection{Newton-Method}
+For quadratic cost function, the minimization problem can be solved with Newton-Method in one step.
+\begin{align*}
+    x_* &= \arg\min_{x}{ax^2 + bx + c}\\
+    &= - \frac{f'(x)}{f''(x)}\\
+    &= - \frac{b}{2a}
+\end{align*}
+Any nonlinear function can be approximated in 2-order Taylor-Expansion form around $\hat{X}$. Therefore, the minimization can be achieved with Newton-Method. One step is not enough, because there is residual due to approximation, thus iterative procedure is taken.
+\begin{equation}
+    f(X) - f(\hat{X}) = H(X - \hat{X})^2 + g(X - \hat{X}) + \text{const} \label{2_order-taylor_expansion}
+\end{equation}
+
+Where $H$ is Hessian matrix of $f(X)$ and $g$ is the gradient matrix. The optimal $X - \hat{X}$ is $- \frac{g}{2H}$. Then $\hat{X}$ is updated and continue being used in next iteration. In fact, $f(X)$ is simply differentiated so as to transform $f(X)$ into quadratic form.
+
+
+\subsection{Non-linear system dynamics linear quadratic planning}
+Non-linear system dynamics can be transformed into quadratic form by differentiating around current state. Then the local quadratic problem is solved exactly the same as LQR.
+\begin{gather}
+    \underbrace{f(x_t, u_t) - f(\hat{x_t}, \hat{u_t})}_{\bar{f}(\delta_{x_t}, \delta_{u_t})} \approx \underbrace{\nabla_{x_t, u_t} f(\hat{u_t}, \hat{u_t})}_{F_t} \begin{bmatrix}
+        x_t - \hat{x_t} \\ u_t - \hat{u_t}
+    \end{bmatrix} \label{diff-dynamics}\\
+    \underbrace{c(u_t, u_t) - c(\hat{u_t}, \hat{u_t})}_{\bar{c}(\delta_{x_t}, \delta_{u_t})} \approx \frac{1}{2} \begin{bmatrix}
+        x_t - \hat{x_t} \\ u_t - \hat{u_t}
+    \end{bmatrix}^T \underbrace{\nabla_{x_t, u_t}^2 c(\hat{u_t}, \hat{u_t})}_{C_t} \begin{bmatrix}
+        x_t - \hat{x_t} \\ u_t - \hat{u_t}
+    \end{bmatrix} + \begin{bmatrix}
+        x_t - \hat{x_t} \\ u_t - \hat{u_t}
+    \end{bmatrix}^T \underbrace{\nabla_{x_t, u_t} c(\hat{x_t}, \hat{u_t})}_{c_t}) \label{diff-value}
+\end{gather}
+
+\subsection{iLQR algorithm}
+\begin{align*}
+    & C_t = \nabla_{x_t, u_t}^2 c(\hat{u_t}, \hat{u_t})\\
+    & c_t = \nabla_{x_t, u_t} c(\hat{x_t}, \hat{u_t})\\
+    & F_t = \nabla_{x_t, u_t} f(\hat{x_t}, \hat{u_t})\\
+    & \text{solve the LQR problem, and apply } u_t = \hat{u_t} + K_t(u_t - \hat{u_t}) + k_t\\
+    & \text{Forward recursion to update states } \hat{x_t}
+\end{align*}
+
+\section{Kinematic model of wheeled robot}
+Under the assumption that wheels doesn't slip on the ground, the system dynamics is in non-holonomic type. The input of the system is $u=[v \quad \delta]^T$.
+\begin{equation}
+    \begin{bmatrix}
+        \dot x\\ \dot y\\ \dot \theta
+    \end{bmatrix} = \begin{bmatrix}
+        v\cos{\theta}\\
+        v\sin{\theta}\\
+        \frac{v\tan{\delta}}{L}
+    \end{bmatrix} \quad \text{where L is the length of wheel base}
+\end{equation}
+
+Descretized form is:
+\begin{equation}
+    \begin{bmatrix}
+        x_{t + 1}\\ y_{t + 1}\\ \theta_{t + 1}
+    \end{bmatrix} = \begin{bmatrix}
+        x_t + \Delta_t v\cos{\theta}\\
+        y_t + \Delta_t v\sin{\theta}\\
+        \theta_t + \frac{\Delta_t v\tan{\delta}}{L}
+    \end{bmatrix} \label{descret-kinematic-dynamics}
+\end{equation}
+
+Referring to \eqref{diff-dynamics}, the kinematic dynamics is transformed:\\
+\begin{equation}
+\begin{aligned}
+    \nabla_{x_t, u_t} f(\hat{x_t}, \hat{u_t}) & = \begin{bmatrix}
+        \frac{\partial{f}}{\partial{x_t}} \quad \frac{\partial{f}}{\partial{u_t}}
+    \end{bmatrix}\\
+    & = \begin{bmatrix}
+        1 \quad 0 \quad \Delta_t v \sin{\theta} \quad & \Delta_t \cos{\theta} \quad 0 \\
+        0 \quad 1 \quad \Delta_t v \cos{\theta} \quad & \Delta_t \sin{\theta} \quad 0 \\
+        0 \quad 0 \quad            1            \quad & \frac{\Delta_t \tan{\delta}}{L} \quad \frac{\Delta_t v}{L\cos{\delta}^2}
+    \end{bmatrix}
+\end{aligned}
+\end{equation}
+
+\end{document}
